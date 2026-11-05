@@ -1,0 +1,55 @@
+# Обязательные проверки инкубатора для репозиториев проектов (FR-CICD-001, FR-CICD-002, FR-CICD-009).
+# Копируется в репозиторий проекта как .github/workflows/incubator-checks.yml. Имена заданий совпадают с
+# обязательными проверками, которые CRM включает в защите ветки при подключении репозитория (AT-11):
+# build, unit-tests, secret-scan, sca. Найденный секрет роняет secret-scan — слияние запрещено, CRM
+# публикует security.alert (AT-19). Команды сборки и тестов — npm; проект меняет их под свой стек.
+name: incubator-checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run build --if-present
+
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm test
+
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Ненулевой код при найденном секрете; значения секретов в журнал не выводятся (--redact).
+      - run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.18.4 detect --source /repo --redact --exit-code 1
+
+  sca:
+    name: sca
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # Уязвимые зависимости по базе OSV роняют проверку.
+      - run: docker run --rm -v "$PWD:/src" ghcr.io/google/osv-scanner:v1.9.0 --recursive /src
